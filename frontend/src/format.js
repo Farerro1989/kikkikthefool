@@ -26,6 +26,18 @@ export const fmtTime = (iso) => {
   return new Date(iso).toLocaleTimeString('zh-CN', { hour12: false });
 };
 
+export const fmtDateTime = (iso) => {
+  if (!iso) return '--';
+  return new Date(iso).toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+};
+
 export const STATUS_LABEL = {
   NEW: '接单',
   ACCEPTED: '已接受',

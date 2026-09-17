@@ -411,6 +411,41 @@ th {
   color: var(--muted);
 }
 
+.badge.unfreeze {
+  background: rgba(59, 130, 246, 0.14);
+  color: #3b82f6;
+}
+
+.badge.settle {
+  background: rgba(139, 149, 165, 0.14);
+  color: #b5bfd0;
+}
+
+/* ---------- 资金流水筛选 ---------- */
+.filter-chips {
+  display: flex;
+  gap: 4px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.chip-btn {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+
+.chip-btn.active {
+  background: #1d2739;
+  color: var(--text);
+  font-weight: 600;
+}
+
 /* ---------- 账户状态 chip 与冻结按钮 ---------- */
 .chip {
   align-self: center;

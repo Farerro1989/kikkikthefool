@@ -113,7 +113,12 @@ router.get('/orders', wrap(async (req, res) => {
 }));
 
 router.get('/ledger', wrap(async (_req, res) => {
-  const { rows } = await pool.query('SELECT * FROM ledger_entries ORDER BY id DESC LIMIT 60');
+  // 资金流水明细：窗口函数累计出每笔分录后的可用/冻结余额快照
+  const { rows } = await pool.query(`
+    SELECT *,
+      SUM(avail_delta) OVER (ORDER BY id) AS avail_after,
+      SUM(frozen_delta) OVER (ORDER BY id) AS frozen_after
+    FROM ledger_entries ORDER BY id DESC LIMIT 100`);
   res.json(rows);
 }));
 

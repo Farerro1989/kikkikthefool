@@ -189,7 +189,7 @@ export default function App() {
               className={`tab ${tab === 'ledger' ? 'active' : ''}`}
               onClick={() => setTab('ledger')}
             >
-              账本分录
+              资金流水
             </button>
           </div>
           <div className="table-wrap">
