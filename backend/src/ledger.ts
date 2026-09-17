@@ -44,18 +44,12 @@ export async function setAccountStatus(target: 'ACTIVE' | 'FROZEN', reason?: str
     txOpen = true;
     const acct = (await client.query('SELECT * FROM account WHERE id = 1 FOR UPDATE')).rows[0];
     if (acct.status === target) {
-      await client.query('ROLLBACK');
-      txOpen = false;
       throw new ApiError('INVALID_STATE', target === 'FROZEN' ? '账户已是冻结状态' : '账户已是正常状态');
     }
     if (target === 'FROZEN' && acct.status !== 'ACTIVE') {
-      await client.query('ROLLBACK');
-      txOpen = false;
       throw new ApiError('INVALID_STATE', '仅正常状态可冻结');
     }
     if (target === 'ACTIVE' && acct.status !== 'FROZEN') {
-      await client.query('ROLLBACK');
-      txOpen = false;
       throw new ApiError('INVALID_STATE', '仅冻结状态可解冻');
     }
     await client.query('UPDATE account SET status = $1 WHERE id = 1', [target]);

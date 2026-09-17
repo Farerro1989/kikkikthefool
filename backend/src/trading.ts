@@ -212,18 +212,12 @@ export async function cancelOrder(id: number) {
     const acct = (await client.query('SELECT * FROM account WHERE id = 1 FOR UPDATE')).rows[0];
     const order = (await client.query('SELECT * FROM orders WHERE id = $1 FOR UPDATE', [id])).rows[0];
     if (!order) {
-      await client.query('ROLLBACK');
-      txOpen = false;
       throw new ApiError('ORDER_NOT_FOUND', '订单不存在', 404);
     }
     if (acct.status !== 'ACTIVE') {
-      await client.query('ROLLBACK');
-      txOpen = false;
       throw new ApiError('ACCOUNT_NOT_ACTIVE', '账户已冻结，禁止撤单');
     }
     if (!CANCELLABLE.includes(order.status)) {
-      await client.query('ROLLBACK');
-      txOpen = false;
       throw new ApiError('NOT_CANCELLABLE', '订单不可撤销');
     }
     await client.query(
