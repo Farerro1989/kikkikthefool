@@ -6,6 +6,7 @@ import OrderTicket from './components/OrderTicket.jsx';
 import PositionsTable from './components/PositionsTable.jsx';
 import OrdersTable from './components/OrdersTable.jsx';
 import OpenOrdersTable from './components/OpenOrdersTable.jsx';
+import BalanceChart from './components/BalanceChart.jsx';
 import LedgerTable from './components/LedgerTable.jsx';
 import {
   cancelOrder,
@@ -192,6 +193,7 @@ export default function App() {
               资金流水
             </button>
           </div>
+          {tab === 'ledger' && <BalanceChart entries={ledger} />}
           <div className="table-wrap">
             {tab === 'trades' && <OrdersTable orders={orders} />}
             {tab === 'open' && <OpenOrdersTable orders={openOrders} onCancel={cancel} />}
