@@ -107,11 +107,14 @@ export async function placeOrder(input: PlaceInput): Promise<{ order: any; dupli
   }
 
   const client = await pool.connect();
+  let txOpen = false;
   try {
     await client.query('BEGIN');
+    txOpen = true;
     const acct = (await client.query('SELECT * FROM account WHERE id = 1 FOR UPDATE')).rows[0];
     if (acct.status !== 'ACTIVE') {
-      await client.query('ROLLBACK');
+      await client.query('COMMIT');
+      txOpen = false;
       throw new ApiError(
         'ACCOUNT_NOT_ACTIVE',
         acct.status === 'FROZEN' ? '账户已冻结，禁止下单' : '账户状态不允许下单',
@@ -140,6 +143,7 @@ export async function placeOrder(input: PlaceInput): Promise<{ order: any; dupli
         await client.query('SELECT * FROM orders WHERE client_order_id = $1', [input.clientOrderId])
       ).rows[0];
       await client.query('COMMIT');
+      txOpen = false;
       return { order, duplicated: true };
     }
     await addOrderEvent(client, order.id, null, 'NEW', '接单');
@@ -150,6 +154,7 @@ export async function placeOrder(input: PlaceInput): Promise<{ order: any; dupli
       if (input.side === 'buy' && cost > available + 1e-9) {
         await rejectOrder(client, order, '可用余额不足');
         await client.query('COMMIT');
+        txOpen = false;
         throw new ApiError('INSUFFICIENT_BALANCE', '可用余额不足');
       }
       const delta = input.side === 'buy' ? -cost : cost;
@@ -167,6 +172,7 @@ export async function placeOrder(input: PlaceInput): Promise<{ order: any; dupli
         if (cost > available + 1e-9) {
           await rejectOrder(client, order, '可用余额不足');
           await client.query('COMMIT');
+          txOpen = false;
           throw new ApiError('INSUFFICIENT_BALANCE', '可用余额不足');
         }
         await postLedgerEntry(client, {
@@ -186,9 +192,10 @@ export async function placeOrder(input: PlaceInput): Promise<{ order: any; dupli
 
     const final = (await client.query('SELECT * FROM orders WHERE id = $1', [order.id])).rows[0];
     await client.query('COMMIT');
+    txOpen = false;
     return { order: final, duplicated: false };
   } catch (e) {
-    await client.query('ROLLBACK').catch(() => {});
+    if (txOpen) await client.query('ROLLBACK').catch(() => {});
     throw e;
   } finally {
     client.release();
@@ -198,20 +205,25 @@ export async function placeOrder(input: PlaceInput): Promise<{ order: any; dupli
 /** 撤单：OPEN -> CANCEL_REQUESTED -> CANCELED，限价买单解冻资金 */
 export async function cancelOrder(id: number) {
   const client = await pool.connect();
+  let txOpen = false;
   try {
     await client.query('BEGIN');
+    txOpen = true;
     const acct = (await client.query('SELECT * FROM account WHERE id = 1 FOR UPDATE')).rows[0];
     const order = (await client.query('SELECT * FROM orders WHERE id = $1 FOR UPDATE', [id])).rows[0];
     if (!order) {
       await client.query('ROLLBACK');
+      txOpen = false;
       throw new ApiError('ORDER_NOT_FOUND', '订单不存在', 404);
     }
     if (acct.status !== 'ACTIVE') {
       await client.query('ROLLBACK');
+      txOpen = false;
       throw new ApiError('ACCOUNT_NOT_ACTIVE', '账户已冻结，禁止撤单');
     }
     if (!CANCELLABLE.includes(order.status)) {
       await client.query('ROLLBACK');
+      txOpen = false;
       throw new ApiError('NOT_CANCELLABLE', '订单不可撤销');
     }
     await client.query(
@@ -234,9 +246,10 @@ export async function cancelOrder(id: number) {
     await addOrderEvent(client, id, 'CANCEL_REQUESTED', 'CANCELED', '撤单完成');
     const final = (await client.query('SELECT * FROM orders WHERE id = $1', [id])).rows[0];
     await client.query('COMMIT');
+    txOpen = false;
     return final;
   } catch (e) {
-    await client.query('ROLLBACK').catch(() => {});
+    if (txOpen) await client.query('ROLLBACK').catch(() => {});
     throw e;
   } finally {
     client.release();
@@ -255,11 +268,14 @@ export async function matchOpenOrders() {
     if (!hit) continue;
     const fillPrice = s.price;
     const client = await pool.connect();
+    let txOpen = false;
     try {
       await client.query('BEGIN');
+      txOpen = true;
       const cur = (await client.query('SELECT * FROM orders WHERE id = $1 FOR UPDATE', [o.id])).rows[0];
       if (!cur || cur.status !== 'OPEN') {
         await client.query('COMMIT');
+        txOpen = false;
         continue;
       }
       if (o.side === 'buy') {
@@ -286,8 +302,9 @@ export async function matchOpenOrders() {
       }
       await fillOrder(client, cur, fillPrice, 'engine', `触价成交（限价 ${o.limit_price}）`);
       await client.query('COMMIT');
+      txOpen = false;
     } catch (e) {
-      await client.query('ROLLBACK').catch(() => {});
+      if (txOpen) await client.query('ROLLBACK').catch(() => {});
     } finally {
       client.release();
     }
