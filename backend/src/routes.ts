@@ -1,14 +1,33 @@
 import { Router } from 'express';
 import { pool } from './db.js';
-import { market } from './engine.js';
+import { market } from './market.js';
+import { ApiError } from './errors.js';
+import { cancelOrder, placeOrder } from './trading.js';
+import { setAccountStatus } from './ledger.js';
 
 export const router = Router();
 
-router.get('/health', (_req, res) => {
-  res.json({ ok: true });
-});
+/** 统一错误响应：{ code, error } */
+const wrap =
+  (fn: (req: any, res: any) => Promise<void>) =>
+  async (req: any, res: any) => {
+    try {
+      await fn(req, res);
+    } catch (e: any) {
+      if (e instanceof ApiError) {
+        res.status(e.status).json({ code: e.code, error: e.message });
+      } else {
+        console.error('API error:', e);
+        res.status(500).json({ code: 'INTERNAL', error: '服务器内部错误' });
+      }
+    }
+  };
 
-router.get('/instruments', (_req, res) => {
+router.get('/health', wrap(async (_req, res) => {
+  res.json({ ok: true });
+}));
+
+router.get('/instruments', wrap(async (_req, res) => {
   const list = [...market.entries()].map(([symbol, s]) => ({
     symbol,
     name: s.name,
@@ -17,16 +36,13 @@ router.get('/instruments', (_req, res) => {
     changePct: ((s.price - s.sessionOpen) / s.sessionOpen) * 100,
   }));
   res.json(list);
-});
+}));
 
-router.get('/candles', async (req, res) => {
+router.get('/candles', wrap(async (req, res) => {
   const symbol = String(req.query.symbol || '');
   const limit = Math.min(Number(req.query.limit) || 240, 1000);
   const s = market.get(symbol);
-  if (!s) {
-    res.status(404).json({ error: '未知交易对' });
-    return;
-  }
+  if (!s) throw new ApiError('UNKNOWN_SYMBOL', '未知交易对', 404);
   const { rows } = await pool.query(
     `SELECT ts, open, high, low, close, volume FROM candles
      WHERE symbol = $1 ORDER BY ts DESC LIMIT $2`,
@@ -38,24 +54,31 @@ router.get('/candles', async (req, res) => {
     rows.push({ ...s.cur });
   }
   res.json(rows);
-});
+}));
 
-router.get('/account', async (_req, res) => {
-  const acct = (await pool.query('SELECT balance FROM account WHERE id = 1')).rows[0];
+router.get('/account', wrap(async (_req, res) => {
+  const acct = (await pool.query('SELECT * FROM account WHERE id = 1')).rows[0];
   const positions = (await pool.query('SELECT * FROM positions')).rows;
   let unrealized = 0;
+  let posValue = 0;
   for (const p of positions) {
     const s = market.get(p.symbol);
-    if (s) unrealized += p.qty * (s.price - p.avg_price);
+    if (s) {
+      unrealized += p.qty * (s.price - p.avg_price);
+      posValue += p.qty * s.price;
+    }
   }
   res.json({
+    status: acct.status,
     balance: acct.balance,
+    frozen: acct.frozen,
+    available: acct.balance - acct.frozen,
     unrealized,
-    equity: acct.balance + unrealized,
+    equity: acct.balance + acct.frozen + posValue,
   });
-});
+}));
 
-router.get('/positions', async (_req, res) => {
+router.get('/positions', wrap(async (_req, res) => {
   const { rows } = await pool.query('SELECT * FROM positions ORDER BY symbol');
   res.json(
     rows.map((p: any) => {
@@ -73,88 +96,40 @@ router.get('/positions', async (_req, res) => {
       };
     }),
   );
-});
+}));
 
-router.get('/orders', async (_req, res) => {
+router.get('/orders', wrap(async (req, res) => {
+  if (req.query.status === 'open') {
+    const { rows } = await pool.query(
+      `SELECT * FROM orders
+       WHERE status IN ('NEW', 'ACCEPTED', 'OPEN', 'PARTIALLY_FILLED')
+       ORDER BY id DESC`,
+    );
+    res.json(rows);
+    return;
+  }
   const { rows } = await pool.query('SELECT * FROM orders ORDER BY id DESC LIMIT 50');
   res.json(rows);
-});
+}));
 
-router.post('/orders', async (req, res) => {
-  const { symbol, side, qty } = req.body || {};
-  const s = market.get(symbol);
-  if (!s) {
-    res.status(400).json({ error: '未知交易对' });
-    return;
-  }
-  if (side !== 'buy' && side !== 'sell') {
-    res.status(400).json({ error: '方向无效' });
-    return;
-  }
-  const q = Number(qty);
-  if (!Number.isFinite(q) || q <= 0) {
-    res.status(400).json({ error: '数量无效' });
-    return;
-  }
+router.get('/ledger', wrap(async (_req, res) => {
+  const { rows } = await pool.query('SELECT * FROM ledger_entries ORDER BY id DESC LIMIT 60');
+  res.json(rows);
+}));
 
-  const price = s.price; // 市价单按当前价即时成交
-  const signedQty = side === 'buy' ? q : -q;
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const acct = (
-      await client.query('SELECT balance FROM account WHERE id = 1 FOR UPDATE')
-    ).rows[0];
-    const pos = (
-      await client.query('SELECT * FROM positions WHERE symbol = $1 FOR UPDATE', [symbol])
-    ).rows[0];
-    const curQty: number = pos ? pos.qty : 0;
-    const curAvg: number = pos ? pos.avg_price : 0;
+router.post('/orders', wrap(async (req, res) => {
+  const { order, duplicated } = await placeOrder(req.body || {});
+  res.json({ ...order, duplicated });
+}));
 
-    if (side === 'buy' && q * price > acct.balance + 1e-9) {
-      await client.query('ROLLBACK');
-      res.status(400).json({ error: '可用余额不足' });
-      return;
-    }
+router.post('/orders/:id/cancel', wrap(async (req, res) => {
+  res.json(await cancelOrder(Number(req.params.id)));
+}));
 
-    let newQty = curQty + signedQty;
-    let newAvg = curAvg;
-    if (curQty === 0) {
-      newAvg = price;
-    } else if (Math.sign(signedQty) === Math.sign(curQty)) {
-      // 加仓：加权平均
-      newAvg = (Math.abs(curQty) * curAvg + q * price) / (Math.abs(curQty) + q);
-    } else if (Math.abs(signedQty) > Math.abs(curQty) + 1e-9) {
-      // 反向越过零轴，剩余部分按新方向开仓
-      newAvg = price;
-    }
-    // 纯减仓时均价不变
+router.post('/account/freeze', wrap(async (req, res) => {
+  res.json(await setAccountStatus('FROZEN', req.body?.reason));
+}));
 
-    await client.query('UPDATE account SET balance = balance - $1 WHERE id = 1', [
-      signedQty * price,
-    ]);
-    if (Math.abs(newQty) < 1e-9) {
-      await client.query('DELETE FROM positions WHERE symbol = $1', [symbol]);
-    } else {
-      await client.query(
-        `INSERT INTO positions (symbol, qty, avg_price) VALUES ($1, $2, $3)
-         ON CONFLICT (symbol) DO UPDATE SET qty = $2, avg_price = $3`,
-        [symbol, newQty, newAvg],
-      );
-    }
-    const order = (
-      await client.query(
-        `INSERT INTO orders (symbol, side, qty, price)
-         VALUES ($1, $2, $3, $4) RETURNING *`,
-        [symbol, side, q, price],
-      )
-    ).rows[0];
-    await client.query('COMMIT');
-    res.json(order);
-  } catch (e: any) {
-    await client.query('ROLLBACK');
-    res.status(500).json({ error: '下单失败' });
-  } finally {
-    client.release();
-  }
-});
+router.post('/account/unfreeze', wrap(async (req, res) => {
+  res.json(await setAccountStatus('ACTIVE', req.body?.reason));
+}));

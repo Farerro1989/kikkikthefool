@@ -25,3 +25,31 @@ export const fmtTime = (iso) => {
   if (!iso) return '--';
   return new Date(iso).toLocaleTimeString('zh-CN', { hour12: false });
 };
+
+export const STATUS_LABEL = {
+  NEW: '接单',
+  ACCEPTED: '已接受',
+  OPEN: '挂单中',
+  PARTIALLY_FILLED: '部分成交',
+  FILLED: '已成交',
+  CANCEL_REQUESTED: '撤单中',
+  CANCELED: '已撤销',
+  REJECTED: '已拒绝',
+  filled: '已成交',
+};
+
+export const badgeClass = (s) =>
+  s === 'FILLED'
+    ? 'ok'
+    : s === 'REJECTED'
+      ? 'rejected'
+      : s === 'CANCELED'
+        ? 'canceled'
+        : 'open';
+
+export const KIND_LABEL = {
+  FUND: '初始入金',
+  FREEZE: '冻结',
+  UNFREEZE: '解冻',
+  SETTLE: '结算',
+};

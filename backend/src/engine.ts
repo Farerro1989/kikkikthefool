@@ -1,29 +1,10 @@
 import { pool } from './db.js';
+import { market, type InstrumentState } from './market.js';
+import { matchOpenOrders } from './trading.js';
 
-export const CANDLE_MS = 5000; // 一根 K 线 = 5 秒（演示用快节奏）
+const CANDLE_MS = 5000; // 一根 K 线 = 5 秒（演示用快节奏）
 const HISTORY_CANDLES = 360;
 const TICK_MS = 1000;
-
-export interface Candle {
-  ts: number;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume: number;
-}
-
-export interface InstrumentState {
-  name: string;
-  kind: string;
-  volatility: number;
-  price: number;
-  sessionOpen: number;
-  cur: Candle;
-}
-
-/** 内存中的实时行情状态，重启后从最后一根 K 线恢复 */
-export const market = new Map<string, InstrumentState>();
 
 function gauss(): number {
   let u = 0;
@@ -74,10 +55,9 @@ export async function initEngine() {
   const { rows: instruments } = await pool.query('SELECT * FROM instruments');
   for (const inst of instruments) {
     const last = (
-      await pool.query(
-        'SELECT close FROM candles WHERE symbol = $1 ORDER BY ts DESC LIMIT 1',
-        [inst.symbol],
-      )
+      await pool.query('SELECT close FROM candles WHERE symbol = $1 ORDER BY ts DESC LIMIT 1', [
+        inst.symbol,
+      ])
     ).rows;
     let price: number;
     let sessionOpen: number;
@@ -88,21 +68,21 @@ export async function initEngine() {
     } else {
       price = last[0].close;
       const first = (
-        await pool.query(
-          'SELECT open FROM candles WHERE symbol = $1 ORDER BY ts ASC LIMIT 1',
-          [inst.symbol],
-        )
+        await pool.query('SELECT open FROM candles WHERE symbol = $1 ORDER BY ts ASC LIMIT 1', [
+          inst.symbol,
+        ])
       ).rows;
       sessionOpen = first[0].open;
     }
-    market.set(inst.symbol, {
+    const state: InstrumentState = {
       name: inst.name,
       kind: inst.kind,
       volatility: inst.volatility,
       price,
       sessionOpen,
       cur: { ts: 0, open: 0, high: 0, low: 0, close: 0, volume: 0 },
-    });
+    };
+    market.set(inst.symbol, state);
   }
 }
 
@@ -112,7 +92,7 @@ export function startEngine() {
   }, TICK_MS);
 }
 
-function persistCandle(symbol: string, c: Candle) {
+function persistCandle(symbol: string, c: { ts: number; open: number; high: number; low: number; close: number; volume: number }) {
   pool
     .query(
       `INSERT INTO candles (symbol, ts, open, high, low, close, volume)
@@ -148,4 +128,5 @@ async function tick() {
     s.cur.low = Math.min(s.cur.low, s.price);
     s.cur.volume += Math.round(50 + Math.random() * 500);
   }
+  await matchOpenOrders();
 }

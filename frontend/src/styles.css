@@ -384,11 +384,124 @@ th {
 }
 
 .badge {
-  color: var(--up);
-  background: rgba(34, 197, 94, 0.12);
   border-radius: 999px;
   padding: 2px 8px;
   font-size: 11px;
+  background: #222a3a;
+  color: var(--muted);
+}
+
+.badge.ok {
+  background: rgba(34, 197, 94, 0.12);
+  color: var(--up);
+}
+
+.badge.open {
+  background: rgba(245, 158, 11, 0.14);
+  color: #f59e0b;
+}
+
+.badge.rejected {
+  background: rgba(239, 68, 68, 0.14);
+  color: var(--down);
+}
+
+.badge.canceled {
+  background: #222a3a;
+  color: var(--muted);
+}
+
+/* ---------- 账户状态 chip 与冻结按钮 ---------- */
+.chip {
+  align-self: center;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 11px;
+}
+
+.chip.ok {
+  background: rgba(34, 197, 94, 0.12);
+  color: var(--up);
+}
+
+.chip.frozen {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--down);
+}
+
+.btn-freeze {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  align-self: center;
+}
+
+.btn-freeze:hover {
+  border-color: #3b82f6;
+  color: #3b82f6;
+}
+
+/* ---------- 下单类型切换 ---------- */
+.seg {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  background: #0d1119;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+}
+
+.seg button {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  padding: 7px 0;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+}
+
+.seg button.active {
+  background: #1d2739;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.frozen-note {
+  color: var(--down);
+  font-size: 12px;
+  text-align: center;
+  padding: 6px 0;
+}
+
+/* ---------- 底部面板标签页 ---------- */
+.tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tab {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  padding: 5px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+
+.tab.active {
+  background: #1d2739;
+  color: var(--text);
+  font-weight: 600;
 }
 
 .btn-close {
